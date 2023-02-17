@@ -239,7 +239,7 @@
     timer_cumer%TIniGuess=timer_cumer%TIniGuess+timer_end%TIniGuess-timer_begin%TIniGuess &
                           -(timer_end%T2elb-timer_begin%T2elb)
 
-    if (.not.quick_method%opt .and. .not.quick_method%grad) then
+    if (.not.quick_method%opt .and. .not.quick_method%grad .and. .not.quick_method%freq) then
         SAFE_CALL(getEnergy(.false.,ierr))
         
     endif
@@ -265,7 +265,7 @@
         endif
     endif
     
-    if (.not.quick_method%opt .and. quick_method%grad) then
+    if (.not.quick_method%opt .and. .not.quick_method%freq .and. quick_method%grad) then
         if (quick_method%UNRST) then
             SAFE_CALL(oshell_gradient(ierr))
         else
