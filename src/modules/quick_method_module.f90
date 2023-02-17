@@ -906,7 +906,7 @@ module quick_method_module
                 self%DFT = .false.
             endif
 
-            if (self%opt) then
+            if (self%opt .or. self%freq) then
                 self%grad = .true.
             endif
 
