@@ -256,6 +256,10 @@ contains
          endif
       endif
 
+      if (quick_method%freq) then
+         if(.not. allocated(self%hessian))allocate(self%hessian(3*natom,3*natom))
+      endif
+
       ! if 2nd order derivation, which is Hessian matrix calculation is requested
       if (quick_method%analHess) then
          if(.not. allocated(self%hessian)) allocate(self%hessian(3*natom,3*natom))
@@ -421,6 +425,10 @@ contains
          endif
       endif
 
+      if (quick_method%freq) then
+        if (allocated(self%hessian)) deallocate(self%hessian)
+      endif
+
       ! if 2nd order derivation, which is Hessian matrix calculation is requested
       if (quick_method%analHess) then
          if (allocated(self%hessian)) deallocate(self%hessian)
@@ -571,6 +579,10 @@ contains
       ! if 1st order derivation, which is gradient calculation is requested
       if (quick_method%grad) then
          call zeroVec(self%gradient,3*natom)
+      endif
+
+      if (quick_method%freq) then
+      call zeroMatrix(self%hessian,3*natom)
       endif
 
       ! if 2nd order derivation, which is Hessian matrix calculation is requested
