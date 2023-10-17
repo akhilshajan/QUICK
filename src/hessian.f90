@@ -46,7 +46,17 @@ end subroutine calchessian
 
 subroutine fdhessian(failed)
   use allmod
-  use quick_cshell_gradient_module, only: cshell_gradient
+  use quick_gridpoints_module
+  use quick_cutoff_module, only: schwarzoff
+  use quick_cshell_eri_module, only: getEriPrecomputables
+  use quick_cshell_gradient_module, only: scf_gradient
+  use quick_oshell_gradient_module, only: uscf_gradient
+  use quick_method_module,only: quick_method
+
+#ifdef MPIV
+  use quick_mpi_module, only: master
+#endif
+
   implicit double precision(a-h,o-z)
 
   character(len=1) cartsym(3)
@@ -67,59 +77,155 @@ subroutine fdhessian(failed)
   ! Store everything (additional scf output) in the .cphf file. Note that this
   ! is a central difference finite difference.
 
-  stepsize = 1.d-4
-  if (master) then
-    itemp = ioutfile
-    open(iCPHFfile,file=CPHFfilename,status='unknown')
-    ioutfile = icphffile
-  endif
+  stepsize = 0.02D0
 
   do Iatom = 1,natom
      do Idirection = 1,3
-        xyz(Idirection,Iatom) = xyz(Idirection,Iatom) + stepsize
-        call getenergy(failed, .false.)
-        if (failed) return
 
-        ! BLOCKED by YIPU MIAO
-        if (quick_method%unrst) then
-           !                if (quick_method%HF) call uhfgrad
-           !                if (quick_method%DFT) call udftgrad
-           !                if (quick_method%SEDFT) call usedftgrad
+        write(ioutfile,1300)Iatom,Idirection
+1300 FORMAT(' ** Atom No: ',I3,' Step No: ',I2,' Step Up **')
+
+        xyz(Idirection,Iatom) = xyz(Idirection,Iatom) + stepsize
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  call gpu_setup(natom,nbasis, quick_molspec%nElec, quick_molspec%imult, &
+              quick_molspec%molchg, quick_molspec%iAtomType)
+  call gpu_upload_xyz(xyz)
+  call gpu_upload_atom_and_chg(quick_molspec%iattype, quick_molspec%chg)
+#endif 
+        call getEriPrecomputables
+        call schwarzoff
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  call gpu_upload_basis(nshell, nprim, jshell, jbasis, maxcontract, &
+        ncontract, itype, aexp, dcoeff, &
+        quick_basis%first_basis_function, quick_basis%last_basis_function,&
+        quick_basis%first_shell_basis_function,quick_basis%last_shell_basis_function,&
+        quick_basis%ncenter, quick_basis%kstart, quick_basis%katom, &
+        quick_basis%ktype,quick_basis%kprim,quick_basis%kshell,quick_basis%Ksumtype, &
+        quick_basis%Qnumber,quick_basis%Qstart,quick_basis%Qfinal,quick_basis%Qsbasis, quick_basis%Qfbasis,&
+        quick_basis%gccoeff, quick_basis%cons, quick_basis%gcexpo,quick_basis%KLMN)
+
+  call gpu_upload_cutoff_matrix(Ycutoff, cutPrim)
+
+        call gpu_upload_oei(quick_molspec%nExtAtom, quick_molspec%extxyz,quick_molspec%extchg, ierr)
+
+#if defined CUDA_MPIV || defined HIP_MPIV
+  timer_begin%T2elb = timer_end%T2elb
+  call mgpu_get_2elb_time(timer_end%T2elb)
+  timer_cumer%T2elb = timer_cumer%T2elb+timer_end%T2elb-timer_begin%T2elb
+#endif                                                                                            
+
+#endif
+
+        call getEnergy(.false.,ierr)
+        if (quick_method%UNRST) then
+            call uscf_gradient
         else
-           if (quick_method%HF) call cshell_gradient(ierr)
-           !                if (quick_method%DFT) call dftgrad
-           !               if (quick_method%SEDFT) call sedftgrad
+            call scf_gradient
         endif
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  if (quick_method%bCUDA) then
+     call gpu_cleanup()
+  endif
+#endif
+
+        write(ioutfile,*)' Step-Up Gradient is'
+        do i=1,natom
+        ii=3*(i-1)
+        write(ioutfile,'(3(F7.4,7X))')quick_qm_struct%gradient(ii+1),quick_qm_struct%gradient(ii+2),quick_qm_struct%gradient(ii+3)
+        enddo
+ 
         Idest = (Iatom-1)*3 + Idirection
         do Iadd = 1,natom*3
-           quick_qm_struct%hessian(Iadd,Idest) = quick_qm_struct%gradient(Iadd)
+           quick_qm_struct%hessian(Idest,Iadd) = quick_qm_struct%gradient(Iadd)
         enddo
+
+        write(ioutfile,*) ' Hessian is:'
+        do Iatm=1,natom*3
+        write(ioutfile,'(9(F7.4,7X))')(quick_qm_struct%hessian(Jatm,Iatm),Jatm=1,natom*3)
+        enddo
+
+  if (quick_method%DFT) then
+     call deform_dft_grid(quick_dft_grid)
+  endif
+
+        write(ioutfile,1500)Iatom,Idirection
+1500 FORMAT(' ** Atom No: ',I3,' Step No: ',I2,' Step Down **')
 
         xyz(Idirection,Iatom) = xyz(Idirection,Iatom)-2.d0*stepsize
-        call getenergy(failed, .false.)
-        if (failed) return
-        if (quick_method%unrst) then
-           !                if (quick_method%HF) call uhfgrad
-           !                if (quick_method%DFT) call udftgrad
-           !                if (quick_method%SEDFT) call usedftgrad
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  call gpu_setup(natom,nbasis, quick_molspec%nElec, quick_molspec%imult, &
+              quick_molspec%molchg, quick_molspec%iAtomType)
+  call gpu_upload_xyz(xyz)
+  call gpu_upload_atom_and_chg(quick_molspec%iattype, quick_molspec%chg)
+#endif
+
+        call getEriPrecomputables
+        call schwarzoff
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  call gpu_upload_basis(nshell, nprim, jshell, jbasis, maxcontract, &
+        ncontract, itype, aexp, dcoeff, &
+        quick_basis%first_basis_function, quick_basis%last_basis_function,&
+        quick_basis%first_shell_basis_function,quick_basis%last_shell_basis_function,&
+        quick_basis%ncenter, quick_basis%kstart, quick_basis%katom, &
+        quick_basis%ktype,quick_basis%kprim,quick_basis%kshell,quick_basis%Ksumtype, &
+        quick_basis%Qnumber,quick_basis%Qstart,quick_basis%Qfinal,quick_basis%Qsbasis, quick_basis%Qfbasis,&
+        quick_basis%gccoeff, quick_basis%cons, quick_basis%gcexpo,quick_basis%KLMN)
+
+  call gpu_upload_cutoff_matrix(Ycutoff, cutPrim)
+
+        call gpu_upload_oei(quick_molspec%nExtAtom, quick_molspec%extxyz,quick_molspec%extchg, ierr)
+
+#if defined CUDA_MPIV || defined HIP_MPIV
+  timer_begin%T2elb = timer_end%T2elb
+  call mgpu_get_2elb_time(timer_end%T2elb)
+  timer_cumer%T2elb = timer_cumer%T2elb+timer_end%T2elb-timer_begin%T2elb
+#endif                                                                                            
+
+#endif
+
+        call getEnergy(.false.,ierr)
+        if (quick_method%UNRST) then
+            call uscf_gradient
         else
-           if (quick_method%HF) call cshell_gradient(ierr)
-           !                if (quick_method%DFT) call dftgrad
-           !                if (quick_method%SEDFT) call sedftgrad
+            call scf_gradient
         endif
+
+#if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
+  if (quick_method%bCUDA) then
+     call gpu_cleanup()
+  endif
+#endif 
+
+        write(ioutfile,*)' Step-Down Gradient is'
+        do i=1,natom
+        ii=3*(i-1)
+        write(ioutfile,'(3(F7.4,7X))')quick_qm_struct%gradient(ii+1),quick_qm_struct%gradient(ii+2),quick_qm_struct%gradient(ii+3)
+        enddo
+
         Idest = (Iatom-1)*3 + Idirection
         do Iadd = 1,natom*3
-           quick_qm_struct%hessian(Iadd,Idest) =(quick_qm_struct%hessian(Iadd,Idest) - quick_qm_struct%gradient(Iadd)) &
-                /(2.d0*stepsize)
+           quick_qm_struct%hessian(Idest,Iadd) =(quick_qm_struct%hessian(Idest,Iadd) - quick_qm_struct%gradient(Iadd))/(2*stepsize)
         enddo
+
+        write(ioutfile,*) ' Hessian is:'
+        do Iatm=1,natom*3
+        write(ioutfile,'(9(F7.4,7X))')(quick_qm_struct%hessian(Jatm,Iatm),Jatm=1,natom*3)
+        enddo
+
+  if (quick_method%DFT) then
+     call deform_dft_grid(quick_dft_grid)
+  endif
 
         ! Finally, return the coordinates to the original location.
 
         xyz(Idirection,Iatom) = xyz(Idirection,Iatom) + stepsize
      enddo
   enddo
-
-  if (master) ioutfile=itemp
 
 end subroutine fdhessian
 
@@ -7827,6 +7933,33 @@ double precision recursive function elctfldrecurse(i,j,k,ii,jj,kk, &
   return
 end function elctfldrecurse
 
+SUBROUTINE MATDIAG(A,N,VM,V,D,IErr)
+IMPLICIT DOUBLE PRECISION (A-H,O-Z)
+INTEGER i4err
+
+!  Diagonalizes a Real Symmetric matrix A by Householder
+!  reduction to Tridiagonal form
+!
+!  ARGUMENTS
+!
+!  A     -  input matrix
+!           on exit contains eigenvectors
+!  N     -  dimension of A
+!  VM    -  scratch space for eigenvector ordering (N*N)
+!  V     -  scratch space (N)
+!  D     -  on exit contains eigenvalues
+
+DIMENSION A(N,N),VM(N,N),V(N),D(N),S(10)
+
+If(N.GT.3) Then
+  call dsyev('V','U',N,A,N,D,VM,N*N,i4err)
+Else
+  call dsyev('V','U',N,A,N,D,S,10,i4err)
+EndIf
+
+IERR=int(i4err)
+RETURN 
+END SUBROUTINE
 
 
 
