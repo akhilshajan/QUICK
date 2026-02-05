@@ -8,7 +8,7 @@ subroutine form_D1W1
   use quick_overlap_module, only: gpt, overlap
   use quick_oei_module, only: ekinetic, attrashellfock1
   use quick_cutoff_module, only: cshell_density_cutoff
-  use quick_cshell_eri_module, only: getCshellEri
+  use quick_eri_cshell_module, only: getCshellEri
 
   implicit double precision(a-h,o-z)
 
@@ -25,7 +25,7 @@ subroutine form_d1const
   use quick_overlap_module, only: gpt, overlap
   use quick_oei_module, only: ekinetic, attrashellfock1
   use quick_cutoff_module, only: cshell_density_cutoff
-  use quick_cshell_eri_module, only: getCshellEri
+  use quick_eri_cshell_module, only: getCshellEri
 
   implicit double precision(a-h,o-z)
   dimension itype2(3,2),ielecfld(3)
@@ -54,7 +54,7 @@ subroutine form_CPHF
   use quick_overlap_module, only: gpt, overlap
   use quick_oei_module, only: ekinetic, attrashellfock1
   use quick_cutoff_module, only: cshell_density_cutoff
-  use quick_cshell_eri_module, only: getCshellEri
+  use quick_eri_cshell_module, only: getCshellEri
 
   implicit double precision(a-h,o-z)
   dimension natend(natom)
@@ -173,11 +173,11 @@ subroutine form_CPHF
             do J=1,3
                G1(:,J,IAT)=d1_curr(:,J,IAT)
             enddo
-              call file4cphf_o(ntri*3,iat,fext1,r1(1,1,iat),'read')
+              call file4cphf_o(ntri*3,iat,fext1,r1(1,1,iat),'read ')
               call daxpy(ntri*3,1.0d0,r1(1,1,iat),1,g1(1,1,iat),1)
             endif
 
-            call file4cphf_o(ntri*3,iat,fext2,r1(1,1,iat),'read') !ro dft=0
+            call file4cphf_o(ntri*3,iat,fext2,r1(1,1,iat),'read ') !ro dft=0
             do J=1,3
                D1_CURR(:,J,IAT)=G1(:,J,IAT)
             enddo
@@ -864,13 +864,13 @@ end subroutine xc_fock
       do i=1, nat3/3
          overlap1=s1(3*i-2:i*3,:)
          fock1=f1(3*i-2:i*3,:)
-         call calcF1FDS1(ncf, ntri, i, fxd, overlap1, fock1, fds1(:,:,3*i-2:i*3))
-         call d1const_xyz(ncf, ntri, nocc, i, vec, val, dense0, fock1, overlap1, d1c(:,3*i-2:i*3))
+         call calcF1FDS1(ncf, ntri, fxd, overlap1, fock1, fds1(:,:,3*i-2:i*3))
+         call d1const_xyz(ncf, ntri, nocc, vec, val, dense0, fock1, overlap1, d1c(:,3*i-2:i*3))
       enddo
 
       end subroutine d1_const
 
-      subroutine calcF1FDS1(ncf, ntri, atm, fxd, s1, f1, fds1)
+      subroutine calcF1FDS1(ncf, ntri, fxd, s1, f1, fds1)
       implicit real*8 (a-h,o-z)
       dimension s1(3,ntri),f1(3,ntri)
       dimension fxd(ncf,ncf)
@@ -951,7 +951,7 @@ end subroutine xc_fock
 
       end subroutine calcF1FDS1
 
-      subroutine d1const_xyz(ncf, ntri, nocc, atm, vec, val, dense0, f1, s1, d1c)
+      subroutine d1const_xyz(ncf, ntri, nocc, vec, val, dense0, f1, s1, d1c)
 !-----------------------------------------------------------------
 ! Calculates the constant part of the D1 matrix for :
 !
@@ -1104,7 +1104,7 @@ end subroutine xc_fock
                  one, cvec, ncf, w1, ncf, &
                  zero, w2, nocc)
 !  expand the overlap matrix to quadratic
-      call quad(smat,w1,one,ncf)
+      call quad((/smat/),w1,one,ncf)
 !  W3=Cocc(T)*S
       call dgemm('t','n',nocc,ncf,ncf, &
                  one, cvec, ncf, w1, ncf, &
@@ -1351,7 +1351,7 @@ end subroutine xc_fock
 !----------------------------------------------------
 ! ndim - record length
 !----------------------------------------------------
-      if(action(1:3).eq.'wri' .or. action(1:3).eq.'rea') then
+      if(action(1:5).eq.'write' .or. action(1:4).eq.'read') then
       else
 !        call nerror(1,'file4cphf_o','wrong action: '//action,0,0)
       endif
@@ -1366,10 +1366,10 @@ end subroutine xc_fock
       open (unit=nfile,file=filename(1:lent), &
             form='unformatted',access='direct',recl=lrec)
 
-      if(action(1:3).eq.'wri') then
+      if(action(1:5).eq.'write') then
          write(unit=nfile,rec=iat) xmat
       endif
-      if(action(1:3).eq.'rea') then
+      if(action(1:4).eq.'read') then
          read(unit=nfile,rec=iat) xmat
       endif
 
@@ -1399,7 +1399,7 @@ end subroutine xc_fock
             enddo
          else
             call get_fext(istep,fext1,fext2)
-            call file4cphf_o(ntri*3,iat,fext2,r ,'read') ! previous ro
+            call file4cphf_o(ntri*3,iat,fext2,r ,'read ') ! previous ro
          endif
 !
 !        calculate scalars <r|l(r_curr)> & <r|r>
@@ -1920,7 +1920,7 @@ end subroutine xc_fock
       liter_dir(3)=liter
       do istep=1,liter
          call get_fext(istep,fexi1,fexi2)
-         call file4cphf_o(ntri*3,iat,fexi1,ri,'read')   !  rl
+         call file4cphf_o(ntri*3,iat,fexi1,ri,'read ')   !  rl
          do icr=1,3
             call absmax(ntri,ri(1,icr),ix,rmax)
             if(rmax.le.1.0d-7) liter_dir(icr)=liter_dir(icr)-1
@@ -1935,7 +1935,7 @@ end subroutine xc_fock
                enddo
             else
                call get_fext(istep-1,fexi1,fexi2)
-               call file4cphf_o(ntri*3,iat,fexi2,ri,'read') !  ro
+               call file4cphf_o(ntri*3,iat,fexi2,ri,'read ') !  ro
             endif
 
             w(istep)=ddot(ntri,ri(1,icr),1, d(1,icr),1) !<ro|dcon>
@@ -1943,7 +1943,7 @@ end subroutine xc_fock
 
             do jstep=1,liter_dir(icr)
                call get_fext(jstep,fexj1,fexj2)
-               call file4cphf_o(ntri*3,iat,fexj1,rj,'read')        !  rl
+               call file4cphf_o(ntri*3,iat,fexj1,rj,'read ')        !  rl
                b(istep,jstep)=ddot(ntri,ri(1,icr),1,rj(1,icr),1) ! <ro | rl>
             enddo
          enddo
@@ -1979,7 +1979,7 @@ end subroutine xc_fock
                enddo
             else
                call get_fext(istep-1,fexi1,fexi2)
-               call file4cphf_o(ntri*3,iat,fexi2,ri,'read') !  ro
+               call file4cphf_o(ntri*3,iat,fexi2,ri,'read ') !  ro
             endif
             call daxpy(ntri,c(istep), ri(1,icr),1, d(1,icr),1 ) ! final d
          enddo

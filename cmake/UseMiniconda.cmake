@@ -1,5 +1,9 @@
-# Downloads and installs a Miniconda appropriate for your operating system
+# Downloads and installs a Miniforge appropriate for your operating system
 # This script does not work when crosscompiling.
+#  Note: to make the initial changes as limited as possible the phrase
+#   "MINICONDA" is retained for now, but the actual download and
+#   installation comes from Miniforge3.  Only tests on Linux x86_64 so 
+#   far, not (for example) on OSX.
 
 # Send the version variables up one scope level from the caller of this macro
 macro(proxy_python_version)
@@ -15,13 +19,9 @@ function(download_and_use_miniconda)
 	set(MINICONDA_INSTALL_DIR ${MINICONDA_TEMP_DIR}/install)	
 	
 	set(MINICONDA_INSTALL_DIR ${MINICONDA_TEMP_DIR}/install PARENT_SCOPE) # need to keep this around for install_minconda()
-	
-	if(MINICONDA_USE_PY3)
-	    set(PYTHON_MAJOR_RELEASE 3)	    
-	else()
-	    set(PYTHON_MAJOR_RELEASE 2)
-	endif()
-	
+
+    set(PYTHON_MAJOR_RELEASE 3)	    
+
 	set(MINICONDA_STAMP_FILE ${CMAKE_BINARY_DIR}/CMakeFiles/miniconda-setup-py${PYTHON_MAJOR_RELEASE}-v${MINICONDA_VERSION}.stamp)
 	
 	# figure out executable paths
@@ -38,22 +38,20 @@ function(download_and_use_miniconda)
 	endif()
 	
 	set(MINICONDA_PYTHON ${MINICONDA_PYTHON} PARENT_SCOPE)
+    # Always use the conda-forge channel so we comply with Anaconda ToS
+    set(ENV{CONDA_CHANNELS} conda-forge)
 	
 	file(MAKE_DIRECTORY ${MINICONDA_TEMP_DIR} ${MINICONDA_DOWNLOAD_DIR})
 	
 	# check if we have already downloaded miniconda
 	if(EXISTS ${MINICONDA_STAMP_FILE})
 		proxy_python_version()
-		message(STATUS "Miniconda is installed in the build directory!")
+		message(STATUS "Miniforge3 is installed in the build directory!")
 		return()
 	endif()
 
-	if(MINICONDA_USE_PY3)	
-		message(STATUS "Downloading Python 3 Miniconda")	    
-	else()
-		message(STATUS "Downloading Python 2.7 Miniconda")
-	endif()
-		
+    message(STATUS "Downloading Python 3 Miniforge")	    
+
 	# Figure out the OS part of the URL
 	if(TARGET_OSX)
 	    message(STATUS "Detected Mac OS X operating system. Downloading the Mac installer")
@@ -77,37 +75,45 @@ function(download_and_use_miniconda)
 		        
 	# Figure out the bitiness part of the URL
 	if(TARGET_OSX)
-		# OS X does not have a 32 bit miniconda
-		set(CONTINUUM_BITS "x86_64")
+		if("${TARGET_ARCH}" STREQUAL "x86_64")
+			message(STATUS "Using 64 bit miniforge3")
+			set(CONTINUUM_BITS "x86_64")
+		elseif("${TARGET_ARCH}" MATCHES "arm64.*")
+			message(STATUS "Using arm64 miniconda")
+			set(CONTINUUM_BITS "arm64")
+		endif()
 	else()
 		if("${TARGET_ARCH}" STREQUAL "x86_64")
-			message(STATUS "Using 64 bit miniconda")
+			message(STATUS "Using 64 bit miniforge3")
 			set(CONTINUUM_BITS "x86_64")
 		elseif("${TARGET_ARCH}" STREQUAL "i386")
 			message(STATUS "Using 32 bit miniconda")
 			set(CONTINUUM_BITS "x86")
+		elseif("${TARGET_ARCH}" MATCHES "arm64")
+			message(STATUS "Using arm64 miniconda")
+			set(CONTINUUM_BITS "aarch64")
 		else()
 			message(WARNING "Unable to detect machine bits.  Falling back to downloading 32 bit x86 Miniconda.")
 			set(CONTINUUM_BITS "x86")
 		endif()
 	endif()
 	
-	set(MINICONDA_INSTALLER_FILENAME "Miniconda${PYTHON_MAJOR_RELEASE}-${MINICONDA_VERSION}-${CONTINUUM_SYSTEM_NAME}-${CONTINUUM_BITS}.${INSTALLER_SUFFIX}")
+	set(MINICONDA_INSTALLER_FILENAME "Miniforge3-${CONTINUUM_SYSTEM_NAME}-${CONTINUUM_BITS}.${INSTALLER_SUFFIX}")
 	
 	# location to download the installer to
 	set(MINICONDA_INSTALLER ${MINICONDA_DOWNLOAD_DIR}/${MINICONDA_INSTALLER_FILENAME})
-	set(INSTALLER_URL "http://repo.continuum.io/miniconda/${MINICONDA_INSTALLER_FILENAME}")
+	set(INSTALLER_URL "https://github.com/conda-forge/miniforge/releases/latest/download/${MINICONDA_INSTALLER_FILENAME}")
 	
 	# If we've already downloaded the installer, use it.	
 	if(EXISTS "${MINICONDA_INSTALLER}")
-		message(STATUS "Using cached Miniconda installer at ${MINICONDA_INSTALLER}")
+		message(STATUS "Using cached Miniforge3 installer at ${MINICONDA_INSTALLER}")
 	else()
 		message("Downloading ${INSTALLER_URL} -> ${MINICONDA_INSTALLER}")
 			
 		# Actually download the file
 		download_file_https(${INSTALLER_URL} ${MINICONDA_INSTALLER} TRUE)
 	endif()
-	message("Installing Miniconda Python.")
+	message("Installing Miniforge Python.")
 	
 	# get rid of the install directory, if it exists
 	file(REMOVE_RECURSE ${MINICONDA_INSTALL_DIR})
@@ -137,7 +143,7 @@ function(download_and_use_miniconda)
 		string(REPLACE "/" "\\" MINICONDA_INSTALL_DIR_BACKSLASHES "${MINICONDA_INSTALL_DIR}")
 		set(MINICONDA_INSTALLER_COMMANDLINE ${MINICONDA_INSTALLER} /AddToPath=0 /S "/D=${MINICONDA_INSTALL_DIR_BACKSLASHES}")
 	else()
-		set(MINICONDA_INSTALLER_COMMANDLINE ${CMAKE_COMMAND} -E env ${CMAKE_ENV_ARGS} ${MINICONDA_INSTALLER} -b -p "${MINICONDA_INSTALL_DIR}")
+		set(MINICONDA_INSTALLER_COMMANDLINE bash ${MINICONDA_INSTALLER} -b -p "${MINICONDA_INSTALL_DIR}")
 	endif()
 	
 	execute_process(COMMAND ${MINICONDA_INSTALLER_COMMANDLINE} 
@@ -148,22 +154,29 @@ function(download_and_use_miniconda)
 		
 	message(STATUS "Updating and installing required and optional packages...")
 	
-	
-	execute_process(COMMAND ${CONDA} update conda -y)	
-	execute_process(COMMAND ${MINICONDA_PYTHON} -m pip install pip --upgrade)
-	if (MINICONDA_USE_PY3)
-		# Revert setuptools as a temporary workaround to recent changes to path mangling behavior
-		execute_process(COMMAND ${MINICONDA_PYTHON} -m pip install setuptools==47.3.1)
+
+	# if the miniconda version has been specified (-DMINICONDA_VERSION=...)
+	# then do not update conda
+	if(MINICONDA_AUTO)
+    
+		# not needed for miniforge:
+		# execute_process(COMMAND ${CONDA} install -y --solver=classic conda-forge::conda-libmamba-solver conda-forge::libmamba conda-forge::libmambapy conda-forge::libarchive)
+		# execute_process(COMMAND ${CONDA} update --all -y)
+		execute_process(COMMAND ${CONDA} update conda -y)
 	endif()
-	
+	execute_process(COMMAND ${MINICONDA_PYTHON} -m pip install pip --upgrade)
+
 	# Prefer non-mkl packages.
 	# This is because if Amber is using MKL, when Python programs run they will try to talk to two
 	# different MKL libraries at the same time: the MKL Miniconda python was linked with, and the MKL
 	# Amber was linked with.
 	# So, to fix this, we make sure Miniconda is not using MKL.
 	execute_process(COMMAND ${CONDA} install -y nomkl)
+
+	execute_process(COMMAND ${CONDA} install -y -c conda-forge f90nml mrcfile pdb2pqr)
+	execute_process(COMMAND ${CONDA} install -y pandas)
 	
-	execute_process(COMMAND ${CONDA} install -y -q conda-build numpy scipy cython=0.29 ipython notebook pytest 
+	execute_process(COMMAND ${CONDA} install -y -q conda-build numpy=1.26.4 scipy cython=0.29 ipython notebook pytest 
 		RESULT_VARIABLE PACKAGE_INSTALL_RETVAL)
 	if(NOT ${PACKAGE_INSTALL_RETVAL} EQUAL 0)
 		message(FATAL_ERROR "Installation of packages failed!  Please fix what's wrong, or disable Miniconda.")
@@ -247,7 +260,10 @@ function(install_miniconda)
     	installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/conda ${BINDIR}/amber.conda Python)
     	installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/ipython ${BINDIR}/amber.ipython Python)
     	installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/jupyter ${BINDIR}/amber.jupyter Python)
-    	installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/pip ${BINDIR}/amber.pip Python)
+        installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/pdb2pqr ${BINDIR}/pdb2pqr Python)
+        installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/propka3 ${BINDIR}/propka3 Python)
+        # Some users don't seem to end up with a miniconda/bin/pip file:
+        #   installtime_create_symlink(${CMAKE_INSTALL_POSTFIX}miniconda/bin/pip ${BINDIR}/amber.pip Python)
     endif()
         
 	add_subdirectory(${CMAKE_SOURCE_DIR}/cmake/FixCondaShebang)

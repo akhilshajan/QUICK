@@ -37,8 +37,6 @@ module quick_basis_module
 
    type quick_basis_type
 
-        type (gaussian), dimension(:), pointer :: gauss_fnc => null()
-
         ! total shell number
         integer, pointer :: nshell
 
@@ -112,7 +110,7 @@ module quick_basis_module
 
         integer, allocatable, dimension(:,:) :: KLMN
 
-#if defined CUDA_MPIV || defined HIP_MPIV
+#if defined(MPIV_GPU)
         integer :: mpi_qshell                   ! Total number or sorted shells
 
         integer,allocatable :: mpi_qshelln(:)   ! qshell ranges calculated by each gpu
@@ -146,7 +144,7 @@ module quick_basis_module
 logical, parameter ::  incoreInt =.false.! .true. !.false.
 integer, parameter :: incoreSize = 100000000
 integer incoreIndex
-#if defined CUDA || defined HIP
+#if defined(GPU)
 double precision, dimension(1) :: intIncore
 integer, dimension(1) :: aIncore
 integer, dimension(1) :: bIncore
@@ -229,7 +227,6 @@ contains
         integer natom_arg,nshell_arg,nbasis_arg,i,j
         type(quick_basis_type) self
 
-        if(.not. associated (self%gauss_fnc)) allocate(self%gauss_fnc(nbasis_arg))
         if(.not. allocated (self%ncenter)) allocate(self%ncenter(nbasis_arg))
         if(.not. allocated(self%first_basis_function)) allocate(self%first_basis_function(natom_arg))
         if(.not. allocated(self%last_basis_function)) allocate(self%last_basis_function(natom_arg))
@@ -274,7 +271,7 @@ contains
         enddo
 
         if(.not. allocated(self%KLMN)) allocate(self%KLMN(3,nbasis_arg))
-#if defined CUDA_MPIV || defined HIP_MPIV
+#if defined(MPIV_GPU)
         if(.not. allocated(self%mpi_qshelln)) allocate(self%mpi_qshelln(mpisize+1))
 #endif
    end subroutine allocate_quick_basis
@@ -287,8 +284,6 @@ contains
         use quick_gaussian_class_module
         implicit none
         type (quick_basis_type) self
-
-        nullify(self%gauss_fnc)
 
         if (allocated(self%ncenter)) deallocate(self%ncenter)
         if (allocated(self%first_basis_function)) deallocate(self%first_basis_function)
@@ -312,7 +307,7 @@ contains
         if (allocated(self%unnorm_gccoeff)) deallocate(self%unnorm_gccoeff)
         if (allocated(self%KLMN)) deallocate(self%KLMN)
 
-#if defined CUDA_MPIV || defined HIP_MPIV
+#if defined(MPIV_GPU)
         if (allocated(self%mpi_qshelln)) deallocate(self%mpi_qshelln)
 #endif
 

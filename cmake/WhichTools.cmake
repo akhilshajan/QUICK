@@ -10,7 +10,14 @@
 # There are many, many reasons that you would want a tool not to build, and in some cases more than one can occur at the same time
 # For that reason, and because order matters, we use a blacklist model for deciding what tools to build.
 # We start with all of them enabled (except the ones not in release builds), and pare down this list for various reasons in the logic below.
-set(AMBER_TOOLS 
+  
+if(PMEMD_ONLY)
+
+   set(AMBER_TOOLS lib emil kmmd gpu_utils pmemd)
+  
+else()
+
+set(AMBER_TOOLS
 #3rd party programs: see 3rdPartyTools.cmake
 #	utility routines and libraries:
 gbnsr6
@@ -31,6 +38,7 @@ sqm
 reduce
 sebomd
 emil
+kmmd
 ndiff-2.00
 gem.pmemd
 xray
@@ -43,7 +51,6 @@ ambpdb
 pbsa
 sff
 rism
-nab
 etc
 
 #   mdgx:
@@ -64,14 +71,21 @@ paramfit
 #	FEW
 FEW
 
-#	amberlite
-amberlite
-
 #	cphstats and cestats
 cphstats
 
 #	quick
 quick
+
+# cew
+cew
+
+#	tcpb
+tcpb-cpp
+tcpb-cpp/pytcpb
+
+#	reaxff-puremd
+reaxff_puremd
 
 #	nfe-umbrella-slice
 nfe-umbrella-slice
@@ -85,7 +99,6 @@ mmpbsa_py
 pymsmt
 pysander
 pytraj
-pymdgx
 pdb4amber
 packmol_memgen
 
@@ -95,7 +108,18 @@ moft
 # pmemd
 gpu_utils
 pmemd
+
+# nabc
+nabc
+
+fe-toolkit
+
+modXNA
+
+libdlfind
 )
+
+endif()
 
 # list of tools in the src directory instead of AmberTools/src
 set(TOOLS_IN_SRC
@@ -105,9 +129,7 @@ set(TOOLS_IN_SRC
 if(NOT AMBER_RELEASE)
 	# these tools are in the git version of amber, but not in the released source
 	list(APPEND AMBER_TOOLS 
-		chamber
-		ptraj
-		nabc)
+		ptraj)
 endif()
 
 # save an unaltered copy for disable_all_tools_except()
@@ -170,22 +192,23 @@ endmacro(tool_depends)
 # tool dependencies (manually determined by looking through every single CMake script)
 # --------------------------------------------------------------------
 tool_depends(addles lib)
-tool_depends(amberlite nab)
 tool_depends(antechamber cifparse)
-tool_depends(etc nab)
+tool_depends(FEW mm_pbsa)
 tool_depends(gbnsr6 sff)
-tool_depends(mm_pbsa nab lib)
-tool_depends(mmpbsa_py nab lib)
-tool_depends(nab sff pbsa cifparse)
-tool_depends(nabc sff pbsa cifparse)
+tool_depends(mm_pbsa nabc sff pbsa cifparse lib)
+tool_depends(mmpbsa_py nabc lib)
+tool_depends(nabc sff pbsa)
 tool_depends(nmode lib)
 tool_depends(nmr_aux cifparse lib)
 tool_depends(pbsa sander lib)
-tool_depends(pymdgx mdgx)
 tool_depends(pysander sander)
 tool_depends(pytraj cpptraj)
-tool_depends(quick sqm)
-tool_depends(rism nab lib)
+tool_depends(tcpb-cpp sqm)
+tool_depends(tcpb-cpp/pytcpb tcpb-cpp)
+tool_depends(cew lib)
+tool_depends(quick sqm cew)
+tool_depends(reaxff_puremd sqm)
+tool_depends(rism lib pbsa)
 tool_depends(sander sqm pbsa sebomd emil lib)
 tool_depends(sebomd sander lib)
 tool_depends(sff pbsa)
@@ -195,8 +218,6 @@ tool_depends(pmemd emil)
 
 # extra dependencies if FFT is enabled
 if(USE_FFT)
-	tool_depends(nab rism)
-	tool_depends(sff rism)
 	tool_depends(sander rism)
 	tool_depends(sebomd rism)
 endif()
@@ -216,12 +237,12 @@ if(USE_FFT)
 		message(FATAL_ERROR "RISM and PBSA FFT solver currently not built with cray compilers.  Please disable USE_FFT.")
 	endif()
 else()
-	disable_tools("Requires FFTW, but USE_FFT is disabled." rism mdgx)
+	disable_tools("Requires FFTW, but USE_FFT is disabled." rism mdgx moft)
 endif()
 
 #Python programs (controlled by BUILD_PYTHON option in PythonConfig.cmake)
 if(NOT BUILD_PYTHON)
-	disable_tools("Python programs are disabled" pysander pytraj pysmt mmpbsa_py parmed pymdgx packmol_memgen)
+	disable_tools("Python programs are disabled" pysander pytraj pymsmt mmpbsa_py parmed packmol_memgen tcpb-cpp/pytcpb)
 endif()
 
 if(STATIC)
@@ -244,15 +265,25 @@ if(perlmol_DISABLED)
 endif()
 
 #deprecated programs
-option(BUILD_DEPRECATED "Build outdated and deprecated tools, such as ptraj" FALSE)
+option(BUILD_DEPRECATED "Build outdated and deprecated tools, such as ptraj, moft" FALSE)
 if(NOT BUILD_DEPRECATED)
-	disable_tools("Deprecated tools are disabled" ptraj )
+	disable_tools("Deprecated tools are disabled" ptraj moft )
 endif()
 
 # in-development programs
 option(BUILD_INDEV "Build Amber programs which are still being developed.  These probably contain bugs, and may not be finished.")
-if(NOT BUILD_INDEV)
-	disable_tools("In-development programs are disabled." quick pymdgx)
+
+if(NOT BUILD_QUICK) # note: option declared in SanderConfig.cmake to resolve circular dependency
+	disable_tool(quick "BUILD_QUICK is not enabled")
+  disable_tool(cew "BUILD_QUICK is not enabled")
+endif()
+
+if(NOT BUILD_TCPB) # note: option declared in $AMBERHOME/CMakeLists.txt
+	disable_tools("BUILD_TCPB is not enabled" tcpb-cpp tcpb-cpp/pytcpb)
+endif()
+
+if(NOT BUILD_REAXFF_PUREMD) # note: option declared in SanderConfig.cmake to resolve circular dependency
+	disable_tool(reaxff_puremd "BUILD_REAXFF_PUREMD is not enabled")
 endif()
 
 if(NOT BUILD_SANDER_API)
@@ -264,7 +295,7 @@ if(NOT BUILD_SANDER_LES)
 endif()
 
 if(CROSSCOMPILE)
-	disable_tools("Python programs with native libraries can't be cross-compiled (see Amber bug #337)" pysander pytraj pymdgx parmed)
+	disable_tools("Python programs with native libraries can't be cross-compiled (see Amber bug #337)" pysander pytraj parmed tcpb-cpp/pytcpb)
 endif()
 
 if(MINGW)
@@ -287,15 +318,20 @@ if(NOT CUDA)
 	disable_tool(gpu_utils "Requires CUDA")
 endif()
 
+if(KMMD_DIR)
+	disable_tool(kmmd "Using external KMMD_DIR, so not building")
+endif()
+
+
 # --------------------------------------------------------------------
 # Disable certain sets of programs due to the build type
 # --------------------------------------------------------------------
 if(CRAY)
 	# In cray parallel modes, almost all tools are disabled.
 	if(MPI)
-		disable_all_tools_except("Not supported on Cray in MPI mode" etc sff cpptraj cifparse mdgx nab rism parmed mmpbsa_py)
+		disable_all_tools_except("Not supported on Cray in MPI mode" etc sff cpptraj cifparse mdgx rism parmed tcpb-cpp/pytcpb mmpbsa_py)
 	elseif(OPENMP)
-		disable_all_tools_except("Not supported on Cray in OpenMP mode" sff cifparse nab rism cpptraj pytraj saxs paramfit)
+		disable_all_tools_except("Not supported on Cray in OpenMP mode" sff cifparse rism cpptraj pytraj saxs paramfit)
 
 	else()
 		disable_tools("Not supported on Cray in serial mode"
@@ -305,8 +341,10 @@ if(CRAY)
 			nmr_aux
 			etc
 			mmpbsa
-			amberlite
-			quick)
+			quick
+      cew
+			tcpb-cpp
+			tcpb-cpp/pytcpb)
 	endif()
 endif()
 
@@ -329,7 +367,6 @@ disable_tools("Disabled by user" ${DISABLE_TOOLS})
 # hopefully 3 iterations is enough
 foreach(ITERATION RANGE 0 2)
 	foreach(TOOL ${AMBER_TOOLS})
-		
 		foreach(DEPENDENCY ${TOOL_DEPENDENCIES_${TOOL}})
 			list_contains(DEPEND_ENABLED ${DEPENDENCY} ${AMBER_TOOLS})
 			
