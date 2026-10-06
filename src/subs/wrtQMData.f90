@@ -49,11 +49,17 @@ subroutine wrtQMData
    etot_arr(1) = quick_qm_struct%Etot
    call qmdata_write('etot', 1, etot_arr)
 
+   ! Number of basis functions actually used (<= nbasis when near-linear
+   ! dependencies were removed): the true second dimension of co/cob and
+   ! length of e/eb/occ/occb below.
+   scalar_arr(1) = NBSuse
+   call qmdata_write('nbsuse', 1, scalar_arr)
+
    ! Converged SCF density (alpha, or RHF/RKS)
    call qmdata_write('dense', nbasis, nbasis, quick_qm_struct%dense)
 
-   ! MO coefficients (alpha, or RHF/RKS)
-   call qmdata_write('co', nbasis, nbasis, quick_qm_struct%co)
+   ! MO coefficients (alpha, or RHF/RKS): nbasis x NBSuse, NOT nbasis x nbasis
+   call qmdata_write('co', nbasis, NBSuse, quick_qm_struct%co)
 
    ! Overlap and core (one-electron) Hamiltonian, shared between alpha/beta
    call qmdata_write('s', nbasis, nbasis, quick_qm_struct%s)
@@ -66,11 +72,11 @@ subroutine wrtQMData
    call qmdata_write('veff', nbasis, nbasis, veff)
    deallocate(veff)
 
-   ! Orbital energies (alpha)
-   call qmdata_write('e', nbasis, quick_qm_struct%E)
+   ! Orbital energies (alpha): length NBSuse, NOT nbasis
+   call qmdata_write('e', NBSuse, quick_qm_struct%E)
 
-   ! Occupation numbers (alpha)
-   allocate(occ(nbasis))
+   ! Occupation numbers (alpha), length NBSuse
+   allocate(occ(NBSuse))
    occ = 0.0d0
    if (.not. quick_method%unrst) then
       neleca = quick_molspec%nelec/2
@@ -85,12 +91,12 @@ subroutine wrtQMData
          neleca = neleca - 1
       endif
    enddo
-   call qmdata_write('occ', nbasis, occ)
+   call qmdata_write('occ', NBSuse, occ)
    deallocate(occ)
 
    if (quick_method%unrst) then
       call qmdata_write('denseb', nbasis, nbasis, quick_qm_struct%denseb)
-      call qmdata_write('cob', nbasis, nbasis, quick_qm_struct%cob)
+      call qmdata_write('cob', nbasis, NBSuse, quick_qm_struct%cob)
       call qmdata_write('fb', nbasis, nbasis, quick_qm_struct%ob)
 
       allocate(veffb(nbasis,nbasis))
@@ -98,9 +104,9 @@ subroutine wrtQMData
       call qmdata_write('veffb', nbasis, nbasis, veffb)
       deallocate(veffb)
 
-      call qmdata_write('eb', nbasis, quick_qm_struct%Eb)
+      call qmdata_write('eb', NBSuse, quick_qm_struct%Eb)
 
-      allocate(occb(nbasis))
+      allocate(occb(NBSuse))
       occb = 0.0d0
       nelecb_local = quick_molspec%nelecb
       do i = 1, NBSuse
@@ -109,7 +115,7 @@ subroutine wrtQMData
             nelecb_local = nelecb_local - 1
          endif
       enddo
-      call qmdata_write('occb', nbasis, occb)
+      call qmdata_write('occb', NBSuse, occb)
       deallocate(occb)
    endif
 
