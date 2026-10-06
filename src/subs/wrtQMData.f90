@@ -9,19 +9,27 @@
 ! Writes the converged SCF data needed to reconstruct the calculation
 ! in an external package (e.g. PySCF): geometry/charge/spin, AO basis
 ! identity, MO coefficients/energies/occupations, overlap, core
-! Hamiltonian, Fock and v_eff = F - H, and the converged density.
-! Controlled by the QMDATA_WRITE keyword, independent of CHK_WRITE
-! (which remains the original density/geometry restart mechanism) and
-! written to its own file via qmdata_init/qmdata_write/qmdata_close.
-! Intended to be called once, after SCF has converged (not per
-! iteration).
+! Hamiltonian, and the converged density. Controlled by the
+! QMDATA_WRITE keyword, independent of CHK_WRITE (which remains the
+! original density/geometry restart mechanism) and written to its own
+! file via qmdata_init/qmdata_write/qmdata_close. Intended to be called
+! once, after SCF has converged (not per iteration).
+!
+! Does NOT export the Fock matrix or v_eff = F - H: quick_qm_struct%o
+! is QUICK's internal, DIIS-history-extrapolated operator matrix, used
+! for convergence acceleration. On the final (post-convergence)
+! iteration it does not exactly satisfy the eigenvalue equation with
+! the exported co/E (confirmed: max|o @ co - s @ co @ diag(E)| ~ 1.9,
+! vs ~1e-14 after reconstructing F = S @ co @ diag(E) @ co^T @ S from
+! the exported s/co/e instead). Any consumer that needs F should
+! reconstruct it that way -- exactly how orca_msgpack_to_pyscf_mf.py
+! already treats ORCA's own Fock -- rather than trust a raw export.
 subroutine wrtQMData
    use allmod
    use quick_io_module, only: qmdata_init, qmdata_write, qmdata_close
    implicit none
 
    integer :: i
-   double precision, allocatable :: veff(:,:), veffb(:,:)
    double precision, allocatable :: occ(:), occb(:)
    double precision :: etot_arr(1)
    integer :: scalar_arr(1)
@@ -65,13 +73,6 @@ subroutine wrtQMData
    call qmdata_write('s', nbasis, nbasis, quick_qm_struct%s)
    call qmdata_write('h', nbasis, nbasis, quick_qm_struct%oneElecO)
 
-   ! Fock matrix and v_eff = F - H (alpha, or RHF/RKS)
-   allocate(veff(nbasis,nbasis))
-   veff = quick_qm_struct%o - quick_qm_struct%oneElecO
-   call qmdata_write('f', nbasis, nbasis, quick_qm_struct%o)
-   call qmdata_write('veff', nbasis, nbasis, veff)
-   deallocate(veff)
-
    ! Orbital energies (alpha): length NBSuse, NOT nbasis
    call qmdata_write('e', NBSuse, quick_qm_struct%E)
 
@@ -97,12 +98,6 @@ subroutine wrtQMData
    if (quick_method%unrst) then
       call qmdata_write('denseb', nbasis, nbasis, quick_qm_struct%denseb)
       call qmdata_write('cob', nbasis, NBSuse, quick_qm_struct%cob)
-      call qmdata_write('fb', nbasis, nbasis, quick_qm_struct%ob)
-
-      allocate(veffb(nbasis,nbasis))
-      veffb = quick_qm_struct%ob - quick_qm_struct%oneElecO
-      call qmdata_write('veffb', nbasis, nbasis, veffb)
-      deallocate(veffb)
 
       call qmdata_write('eb', NBSuse, quick_qm_struct%Eb)
 
