@@ -148,7 +148,7 @@
 #endif
   
 #if defined CUDA || defined CUDA_MPIV || defined HIP || defined HIP_MPIV
-     if(quick_method%bCUDA) then
+     if(quick_method%bGPU) then
   
         if (quick_method%DFT) then
 
