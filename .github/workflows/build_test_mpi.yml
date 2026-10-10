@@ -211,6 +211,8 @@ jobs:
           path: |
             ${{ github.workspace }}/install/runtest.log
             ${{ github.workspace }}/install/runtest-verbose.log
+            ${{ github.workspace }}/install/.quick.mpi.runtest.log
+            ${{ github.workspace }}/install/.quick.mpi.runtest-verbose.log
             ${{ github.workspace }}/install/test/runs/mpi
           retention-days: 3
           compression-level: 6
@@ -615,6 +617,8 @@ jobs:
           path: |
             ${{ github.workspace }}/install/runtest.log
             ${{ github.workspace }}/install/runtest-verbose.log
+            ${{ github.workspace }}/install/.quick.mpi.runtest.log
+            ${{ github.workspace }}/install/.quick.mpi.runtest-verbose.log
             ${{ github.workspace }}/install/test/runs/mpi
           retention-days: 3
           compression-level: 6

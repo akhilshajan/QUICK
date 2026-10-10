@@ -165,6 +165,8 @@ jobs:
           path: |
             ${{ github.workspace }}/install/runtest.log
             ${{ github.workspace }}/install/runtest-verbose.log
+            ${{ github.workspace }}/install/.quick.serial.runtest.log
+            ${{ github.workspace }}/install/.quick.serial.runtest-verbose.log
             ${{ github.workspace }}/install/test/runs/serial
           retention-days: 3
           compression-level: 6
@@ -512,6 +514,8 @@ jobs:
           path: |
             ${{ github.workspace }}/install/runtest.log
             ${{ github.workspace }}/install/runtest-verbose.log
+            ${{ github.workspace }}/install/.quick.serial.runtest.log
+            ${{ github.workspace }}/install/.quick.serial.runtest-verbose.log
             ${{ github.workspace }}/install/test/runs/serial
           retention-days: 3
           compression-level: 6
