@@ -263,16 +263,27 @@
     call MPI_BCAST(npsaved,1,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(NNmax,1,mpi_integer,0,quick_comm,quick_mpi_error)
 
-    call MPI_BCAST(dccore,npsaved*500,mpi_integer,0,quick_comm,quick_mpi_error)
+    ! dccore/dcbuffer1/dcbuffer2/dcsub are allocated (np,natomt) in inidivcon.f90
+    ! -- a fragment's core+buffer region can in principle include any atom in
+    ! the system, so natomt is the exact bound, not a guessed cap. This size
+    ! must match that allocation or ranks beyond master silently receive only
+    ! a truncated prefix of each fragment's atom list.
+    call MPI_BCAST(dccore,npsaved*natomt,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(dccoren,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)
-    call MPI_BCAST(dcbuffer1,npsaved*500,mpi_integer,0,quick_comm,quick_mpi_error)
-    call MPI_BCAST(dcbuffer2,npsaved*500,mpi_integer,0,quick_comm,quick_mpi_error)
+    call MPI_BCAST(dcbuffer1,npsaved*natomt,mpi_integer,0,quick_comm,quick_mpi_error)
+    call MPI_BCAST(dcbuffer2,npsaved*natomt,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(dcbuffer1n,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(dcbuffer2n,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)
-    call MPI_BCAST(dcsub,npsaved*500,mpi_integer,0,quick_comm,quick_mpi_error)
+    call MPI_BCAST(dcsub,npsaved*natomt,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(dcsubn,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)
-    
-    call MPI_BCAST(dclogic,npsaved*natomt*natomt,mpi_integer,0,quick_comm,quick_mpi_error)
+
+    ! dclogic is allocated (np,ndcmax,ndcmax) in inidivcon.f90, with ndcmax the
+    ! true largest fragment (maxval of dcsubn), already broadcast there before
+    ! that allocation -- dcsubn above has just been broadcast again here, so
+    ! recomputing the same maxval from it is exact and needs no extra variable
+    ! to carry across the two files.
+    call MPI_BCAST(dclogic,npsaved*maxval(dcsubn(1:npsaved))*maxval(dcsubn(1:npsaved)), &
+          mpi_integer,0,quick_comm,quick_mpi_error)
 
     call MPI_BCAST(nbasisdc,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)
     call MPI_BCAST(nelecdcsub,npsaved,mpi_integer,0,quick_comm,quick_mpi_error)

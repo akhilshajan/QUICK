@@ -1211,7 +1211,7 @@ subroutine fermiUSCF(efermi,jscf,fermi_ok)
                Kstart2=0
                do jtt2=1,dcsubn(itt)
                   Jblockatom=dcsub(itt,jtt2)
-                  if(dclogic(itt,Iblockatom,Jblockatom).eq.0)then
+                  if(dclogic(itt,jtt,jtt2).eq.0)then
                      do jtemp=quick_basis%first_basis_function(Jblockatom),quick_basis%last_basis_function(Jblockatom)
                         quick_qm_struct%denseb(itemp,jtemp)= quick_qm_struct%denseb(itemp,jtemp)+ &
                               invdcoverlap(Iblockatom,Jblockatom)* &

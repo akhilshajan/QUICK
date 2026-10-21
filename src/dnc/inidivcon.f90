@@ -62,6 +62,7 @@ subroutine inidivcon(natomsaved)
   integer,allocatable:: temp1d(:),temp2d(:,:)
   integer,allocatable:: isurv(:)              ! subsystems surviving elimination
   integer nsurv                               ! how many of them
+  integer ndcmax                              ! max atoms in any one fragment's dcsub, for dclogic
   integer tempinteger,tempinteger2
   integer natomt,natomsaved
   logical bEliminate  ! if elimination step needed (absolute must for large systems)
@@ -239,10 +240,20 @@ subroutine inidivcon(natomsaved)
   allocate(selectN(0:np+2),selectCA(np+2),ccharge(np))
   allocate(divconmfcc(np,np))
   allocate(buffer2log(np,np))
-  allocate(dccore(np,500))
-  allocate(dcbuffer1(np,500))
-  allocate(dcbuffer2(np,500))
-  allocate(dcsub(np,500))
+  ! A fragment's core+buffer region can in principle include any atom in the
+  ! system, so natomt is the only bound on dccore/dcbuffer1/dcbuffer2/dcsub
+  ! that is guaranteed correct rather than guessed. temp2d below (also sized
+  ! natomt) already assumed as much for its own copy of dcsub's contents
+  ! during fragment-elimination compaction; dcsub itself just never matched.
+  ! A hardcoded 500 here silently corrupted memory for any solvated system
+  ! whose buffer sphere happened to hold more than 500 atoms, with no check
+  ! anywhere catching it (T4 Lysozyme, 2026-10-20). Costs ~585MB total for
+  ! this system's scale (np~3151, natomt=11608) -- trivial next to the node
+  ! memory this run already needs.
+  allocate(dccore(np,natomt))
+  allocate(dcbuffer1(np,natomt))
+  allocate(dcbuffer2(np,natomt))
+  allocate(dcsub(np,natomt))
   allocate(dcsubn(np))
   allocate(dcsubn1(np))
   allocate(dccoren(np))
@@ -254,7 +265,13 @@ subroutine inidivcon(natomsaved)
   allocate(nelecdcsub(np))
   allocate(disdivmfcc(np,np))
   allocate(selectNN(np+1))
-  allocate(dclogic(np,natomt,natomt))
+  ! dclogic is allocated later (STEP 2, once dcsubn's final per-fragment counts
+  ! are known after elimination) sized exactly to the true largest fragment,
+  ! not a guess -- see the ndcmax computation and allocate below. Sizing it
+  ! np*natomt*natomt here instead, to match dcsub above, is exactly the 1.58TB
+  ! allocation failure this was fixed to avoid (T4 Lysozyme, 2026-10-20):
+  ! dclogic(itt,.,.) is squared in natomt where dcsub/dccore/etc. are only
+  ! linear, so the natomt bound that is cheap for those is not cheap here.
   allocate(embedded(np,np))
   allocate(templog2(np))
   allocate(temp1d(natomt))
@@ -363,10 +380,10 @@ subroutine inidivcon(natomsaved)
         do j=selectN(i),selectN(i+1)-1
            icc=icc+1
            !dccore(i,j) stands for the no. of atom for the jth atom in fragment i
-           dccore(i,j-selectN(i)+1)=j  
+           dccore(i,j-selectN(i)+1)=j
         enddo
         !dccoren(i) stands for the amount of atoms for fragment i.
-        dccoren(i)=icc                  
+        dccoren(i)=icc
      enddo
 
      !-----------------------------------------------------------------
@@ -504,7 +521,7 @@ subroutine inidivcon(natomsaved)
      !-----------------------------------------------------------------
      do i=1,np
         dcsubn(i)=0
-        do j=1,dccoren(i) 
+        do j=1,dccoren(i)
            dcsubn(i)=dcsubn(i)+1
            dcsub(i,dcsubn(i))=dccore(i,j)
         enddo
@@ -516,7 +533,7 @@ subroutine inidivcon(natomsaved)
 
         dcsubn1(i)=dcsubn(i)
 
-     ! If OWNFRAG is used this section of code is skipped     
+     ! If OWNFRAG is used this section of code is skipped
        if(quick_method%ifragbasis.lt.4) then
         do j=1,dcbuffer2n(i)
            dcsubn(i)=dcsubn(i)+1
@@ -787,6 +804,14 @@ subroutine inidivcon(natomsaved)
         NNmax=max(NNmax,nbasisdc(i))
      enddo
 
+     ! Max atoms in any one fragment's dcsub, now that elimination has settled
+     ! and dcsubn holds its final values -- sizes dclogic (below) to exactly
+     ! what the largest surviving fragment needs instead of guessing a cap.
+     ndcmax=0
+     do i=1,np
+        ndcmax=max(ndcmax,dcsubn(i))
+     enddo
+
      !-----------------------------------------------------------------!
      ! Finally, Time to output them
      !-----------------------------------------------------------------!
@@ -833,10 +858,20 @@ subroutine inidivcon(natomsaved)
   if (bMPI) then
      call MPI_BCAST(np,1,mpi_integer,0,quick_comm,quick_mpi_error)
      call MPI_BCAST(NNmax,1,mpi_integer,0,quick_comm,quick_mpi_error)
+     call MPI_BCAST(ndcmax,1,mpi_integer,0,quick_comm,quick_mpi_error)
      call MPI_BARRIER(quick_comm,quick_mpi_error)
   endif
   !-------------------END MPI/ALL NODES--------------------------------
 #endif
+
+  ! dclogic(itt,.,.) only ever holds a flag between two atoms that are both in
+  ! fragment itt's own dcsub list (see the local-index fix in the "block and
+  ! find connection matrix" loop below), so ndcmax -- the true largest
+  ! fragment, now known on every rank -- is the exact bound, not a guess.
+  ! Every rank allocates here (not just master): the broadcast above makes
+  ! ndcmax available everywhere, and STEP 4 below broadcasts dclogic's actual
+  ! contents the same way as every other per-fragment array.
+  allocate(dclogic(np,ndcmax,ndcmax))
 
   allocate(Odcsub(np,NNmax,NNmax))
   allocate(Onedcsub(np,NNmax,NNmax))
@@ -911,8 +946,8 @@ subroutine inidivcon(natomsaved)
 
      ! try to block and find connection matrix
      do kk=1,np
-        do i=1,natomt
-           do j=1,natomt
+        do i=1,dcsubn(kk)
+           do j=1,dcsubn(kk)
               dclogic(kk,i,j)=0
            enddo
         enddo
@@ -928,7 +963,7 @@ subroutine inidivcon(natomsaved)
                  do m2=1,dcbuffer1n(itt)
                     m20=dcbuffer1(itt,m2)
                     if(Iblockatom.eq.m10.and.Jblockatom.eq.m20)then
-                       dclogic(itt,Iblockatom,Jblockatom)=1
+                       dclogic(itt,jtt,jtt2)=1
                     endif
                  enddo
               enddo
